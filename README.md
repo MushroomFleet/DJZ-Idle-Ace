@@ -3,7 +3,7 @@
 **An immersive idle/incremental game combining strategic squadron management with 3D aerial combat simulation.**
 
 [![Play Now](https://img.shields.io/badge/Play%20Now-Live%20Demo-brightgreen?style=for-the-badge)](https://idle-ace.oragenai.com/)
-[![GitHub](https://img.shields.io/badge/GitHub-Repository-blue?style=for-the-badge&logo=github)](https://github.com/MushroomFleet/ace-commander-ai)
+[![GitHub](https://img.shields.io/badge/GitHub-Repository-blue?style=for-the-badge&logo=github)](https://github.com/MushroomFleet/DJZ-Idle-Ace)
 
 🎮 **[Play the game now!](https://idle-ace.oragenai.com/)**
 
@@ -125,8 +125,8 @@ npm install -g pnpm
 
 1. **Clone the repository**
 ```bash
-git clone https://github.com/MushroomFleet/ace-commander-ai.git
-cd ace-commander-ai
+git clone https://github.com/MushroomFleet/DJZ-Idle-Ace.git
+cd DJZ-Idle-Ace
 ```
 
 2. **Install dependencies**
@@ -189,7 +189,7 @@ For detailed troubleshooting steps and solutions, see: **[docs/npm-install-fixes
 ## 📁 Project Structure
 
 ```
-ace-commander-ai/
+DJZ-Idle-Ace/
 ├── src/
 │   ├── components/          # React components
 │   │   ├── CombatSimulator/ # 3D combat simulation
@@ -250,11 +250,11 @@ This project is open source. Please check the repository for license details.
 If you use this codebase in your research or project, please cite:
 
 ```bibtex
-@software{idle_ace_commander,
-  title = {Idle Ace Commander: An AI-Powered Incremental Combat Simulation},
+@software{djz_idle_ace,
+  title = {DJZ Idle Ace: An AI-Powered Incremental Combat Simulation},
   author = {Drift Johnson},
   year = {2025},
-  url = {https://github.com/MushroomFleet/ace-commander-ai},
+  url = {https://github.com/MushroomFleet/DJZ-Idle-Ace},
   version = {1.0.0}
 }
 ```
@@ -268,3 +268,4 @@ If you enjoy this project, consider supporting its development:
 ---
 
 **Built with ❤️ using React, Three.js, and AI**
+
