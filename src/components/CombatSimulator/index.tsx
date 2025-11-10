@@ -6,6 +6,7 @@ import { useBattleSimulation } from '@/hooks/useBattleSimulation';
 import ThreeJsScene from './ThreeJsScene';
 import ResultsScreen from './ResultsScreen';
 import { HUD } from './HUD';
+import { BattleResults } from '@/types/combat.types';
 import {
   generateMissionResultsPrompt,
   FALLBACK_VICTORY,
@@ -14,7 +15,7 @@ import {
 import { calculateMissionScore } from '@/utils/scoreCalculations';
 
 interface CombatSimulatorProps {
-  onMissionComplete?: (results: any) => void;
+  onMissionComplete?: (results: BattleResults) => void;
 }
 
 const CombatSimulator: React.FC<CombatSimulatorProps> = ({ onMissionComplete }) => {
@@ -26,7 +27,7 @@ const CombatSimulator: React.FC<CombatSimulatorProps> = ({ onMissionComplete }) 
   const [hasGeneratedResults, setHasGeneratedResults] = useState(false);
   const [hasAppliedRewards, setHasAppliedRewards] = useState(false);
 
-  const { battleState, initializeBattle } = useBattleSimulation(
+  const { battleState, initializeBattle, forceEndBattle } = useBattleSimulation(
     gameState.squadron,
     gameState.pilots,
     gameState.currentMission,
@@ -149,16 +150,35 @@ const CombatSimulator: React.FC<CombatSimulatorProps> = ({ onMissionComplete }) 
           alliedJets={battleState.alliedJets}
           enemyJets={battleState.enemyJets}
           projectiles={battleState.projectiles}
+          tracers={battleState.tracers}
+          missiles={battleState.missiles}
+          flares={battleState.flares}
           recentEvents={battleState.executedEvents.slice(-5)}
         />
       </div>
 
       {/* New HUD System */}
-      <HUD 
+      <HUD
         battleState={battleState}
-        cameraPosition={[0, 50, 100]} 
+        cameraPosition={[0, 50, 100]}
         cameraRotation={[0, 0, 0]}
       />
+
+      {/* DEBUG Exit Button */}
+      {(() => {
+        // Import DEBUG constant dynamically to check it
+        const DEBUG = true; // This should match the DEBUG constant in useBattleSimulation.ts
+        return DEBUG ? (
+          <div className="absolute top-4 right-4 z-50">
+            <button
+              onClick={forceEndBattle}
+              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded border-2 border-red-400 font-bold shadow-lg"
+            >
+              EXIT DEBUG BATTLE
+            </button>
+          </div>
+        ) : null;
+      })()}
 
       {/* Event Log */}
       <div className="absolute bottom-4 left-4 bg-gray-800 bg-opacity-90 p-4 rounded border-2 border-military-green max-w-md pointer-events-none">

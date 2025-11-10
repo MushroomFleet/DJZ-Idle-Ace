@@ -1,4 +1,10 @@
 // ============================================
+// IMPORTS
+// ============================================
+
+import * as THREE from 'three';
+
+// ============================================
 // BATTLE STATE
 // ============================================
 
@@ -20,6 +26,9 @@ export interface BattleState {
 
   // Visual Effects
   projectiles: Projectile[];
+  tracers: TracerState[];
+  missiles: MissileState[];
+  flares: FlareState[];
 
   // Results
   results: BattleResults | null;
@@ -41,6 +50,31 @@ export interface FlareDeploymentState {
   deploying: boolean;
   flaresLeft: number;
   nextFlareTimer: number;
+}
+
+export interface TracerState {
+  id: string;
+  position: THREE.Vector3;
+  velocity: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+  life: number;
+}
+
+export interface MissileState {
+  id: string;
+  position: THREE.Vector3;
+  velocity: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+  life: number;
+  targetId: string | null;
+  willDetonate: boolean;
+}
+
+export interface FlareState {
+  id: string;
+  position: THREE.Vector3;
+  velocity: THREE.Vector3;
+  life: number;
 }
 
 // ============================================

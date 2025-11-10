@@ -5,7 +5,7 @@ import { calculateBattleOutcome } from '@/utils/combatCalculations';
 import * as THREE from 'three';
 
 // Simulation constants (adapted from PoC.tsx)
-const DEBUG = false;
+const DEBUG = true;
 const RESPAWN_TIME = 5000; // ms
 const JET_SPEED = 35;
 const TURN_SPEED = 1.8;
@@ -139,6 +139,9 @@ export const useBattleSimulation = (
       scheduledEvents: events,
       executedEvents: [],
       projectiles: [],
+      tracers: [],
+      missiles: [],
+      flares: [],
       results,
     });
   }, [squadron, pilots, mission, tactic]);
@@ -370,14 +373,62 @@ export const useBattleSimulation = (
         (p) => Date.now() - p.createdAt < p.lifespan
       );
 
-      // Check if battle should end
-      if (elapsed >= 30000) {
+      // Check if battle should end (only if not in DEBUG mode)
+      if (!DEBUG && elapsed >= 30000) {
         setBattleState((prev) =>
           prev
             ? {
                 ...prev,
                 status: prev.results?.victory ? 'victory' : 'defeat',
                 endTime: Date.now(),
+              }
+            : null
+        );
+        return;
+      }
+
+      // Handle respawns in DEBUG mode
+      if (DEBUG) {
+        const respawnJets = (jets: BattleEntity[]): BattleEntity[] => {
+          return jets.map(jet => {
+            if ((jet.isDestroyed || jet.isWrecked) && jet.destroyedAt && Date.now() - jet.destroyedAt > RESPAWN_TIME) {
+              // Respawn the jet
+              const angle = Math.random() * Math.PI * 2;
+              const radius = jet.team === 'allied' ? 40 : 60;
+              return {
+                ...jet,
+                isDestroyed: false,
+                isWrecked: false,
+                destroyedAt: null,
+                wreckageAngularVelocity: null,
+                position: [
+                  Math.cos(angle) * radius,
+                  (Math.random() - 0.5) * 20, // Random height
+                  Math.sin(angle) * radius,
+                ] as [number, number, number],
+                velocity: [0, 0, 0],
+                quaternion: [0, 0, 0, 1], // Identity quaternion
+                health: jet.maxHealth,
+                fireCooldown: Math.random() * 3,
+                burstState: { active: false, burstsLeft: 0, tracersLeftInBurst: 0, nextShotTimer: 0, isKillShot: false },
+                flareState: { deploying: false, flaresLeft: 0, nextFlareTimer: 0 },
+              };
+            }
+            return jet;
+          });
+        };
+
+        const respawnedAllied = respawnJets(updatedAllied);
+        const respawnedEnemy = respawnJets(updatedEnemy);
+
+        setBattleState((prev) =>
+          prev
+            ? {
+                ...prev,
+                alliedJets: respawnedAllied,
+                enemyJets: respawnedEnemy,
+                executedEvents: [...prev.executedEvents, ...newExecutedEvents],
+                projectiles: activeProjectiles,
               }
             : null
         );
@@ -400,5 +451,15 @@ export const useBattleSimulation = (
     return () => clearInterval(interval);
   }, [battleState]);
 
-  return { battleState, initializeBattle };
+  const forceEndBattle = useCallback(() => {
+    setBattleState(prev =>
+      prev ? {
+        ...prev,
+        status: 'victory',
+        endTime: Date.now(),
+      } : null
+    );
+  }, []);
+
+  return { battleState, initializeBattle, forceEndBattle };
 };
