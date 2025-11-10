@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
@@ -104,90 +104,128 @@ const ArenaSphere: React.FC = () => {
   );
 };
 
-// Fighter Jet Component with Energy Trail
+// Advanced Jet Component (adapted from PoC.tsx)
 interface FighterJetProps {
   entity: BattleEntity;
   color: 'green' | 'red';
 }
 
 const FighterJet: React.FC<FighterJetProps> = ({ entity, color }) => {
-  const meshRef = useRef<THREE.Mesh>(null);
-  const [trailPositions, setTrailPositions] = useState<THREE.Vector3[]>([]);
+  const groupRef = useRef<THREE.Group>(null);
+  const trailPoints = useRef<THREE.Vector3[]>([]).current;
+  const maxTrailPoints = 50;
+  const trailColor = color === 'green' ? '#4ADE80' : '#F87171';
+  const trailLine = useMemo(() => {
+    const geometry = new THREE.BufferGeometry();
+    const material = new THREE.LineBasicMaterial({ color: trailColor, transparent: true, opacity: 0.6 });
+    return new THREE.Line(geometry, material);
+  }, [trailColor]);
+
+  // Wreckage smoke trail
+  const smokeTrailPoints = useRef<THREE.Vector3[]>([]).current;
+  const maxSmokeTrailPoints = 400;
+  const smokeTrailLine = useMemo(() => {
+    const geometry = new THREE.BufferGeometry();
+    const material = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 1.0, linewidth: 3 });
+    return new THREE.Line(geometry, material);
+  }, []);
 
   useFrame(() => {
-    if (meshRef.current && !entity.isDestroyed) {
-      // Update position
-      const newPos = new THREE.Vector3(
-        entity.position[0],
-        entity.position[1],
-        entity.position[2]
-      );
-      meshRef.current.position.copy(newPos);
+    if (groupRef.current) {
+      const position = new THREE.Vector3(entity.position[0], entity.position[1], entity.position[2]);
+      const quaternion = new THREE.Quaternion(entity.quaternion[0], entity.quaternion[1], entity.quaternion[2], entity.quaternion[3]);
 
-      // Update rotation
-      meshRef.current.rotation.set(
-        entity.rotation[0],
-        entity.rotation[1],
-        entity.rotation[2]
-      );
+      groupRef.current.position.copy(position);
+      groupRef.current.quaternion.copy(quaternion);
 
-      // Update trail (keep last 15 positions)
-      setTrailPositions(prev => {
-        const updated = [...prev, newPos.clone()];
-        return updated.slice(-15);
-      });
+      if (entity.isWrecked) {
+        // Clear normal trail if it exists
+        if (trailPoints.length > 0) {
+          trailPoints.length = 0;
+          trailLine.geometry.dispose();
+          trailLine.geometry = new THREE.BufferGeometry();
+        }
+
+        // Update smoke trail
+        smokeTrailPoints.push(position);
+        if (smokeTrailPoints.length > maxSmokeTrailPoints) smokeTrailPoints.shift();
+
+        if (smokeTrailPoints.length > 1) {
+          smokeTrailLine.geometry.dispose();
+          smokeTrailLine.geometry = new THREE.BufferGeometry().setFromPoints(smokeTrailPoints);
+          const colors = [];
+          const yellow = new THREE.Color(0xffff99); // Fiery core
+          const orange = new THREE.Color(0xffa500); // Orange fire
+          const darkGray = new THREE.Color(0x222222); // Black smoke
+          for (let i = 0; i < smokeTrailPoints.length; i++) {
+            const t = i / (smokeTrailPoints.length - 1);
+            const color = new THREE.Color();
+            if (t > 0.8) { // Last 20% of the trail (closest to jet) is fiery yellow
+              color.lerpColors(orange, yellow, (t - 0.8) / 0.2);
+            } else { // First 80% is a gradient from dark gray to orange
+              color.lerpColors(darkGray, orange, t / 0.8);
+            }
+            colors.push(color.r, color.g, color.b);
+          }
+          smokeTrailLine.geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        }
+      } else {
+        groupRef.current.visible = true;
+        // Clear smoke trail if it exists
+        if (smokeTrailPoints.length > 0) {
+          smokeTrailPoints.length = 0;
+          smokeTrailLine.geometry.dispose();
+          smokeTrailLine.geometry = new THREE.BufferGeometry();
+        }
+
+        // Update normal trail
+        if (trailPoints.length > 0) {
+          const lastPoint = trailPoints[trailPoints.length - 1];
+          const teleportThreshold = 120; // WORLD_RADIUS
+          if (position.distanceTo(lastPoint) > teleportThreshold) {
+            trailPoints.length = 0;
+          }
+        }
+        trailPoints.push(position);
+        if (trailPoints.length > maxTrailPoints) trailPoints.shift();
+
+        trailLine.geometry.dispose();
+        if (trailPoints.length > 1) {
+          trailLine.geometry = new THREE.BufferGeometry().setFromPoints(trailPoints);
+        } else {
+          trailLine.geometry = new THREE.BufferGeometry();
+        }
+      }
     }
   });
 
   if (entity.isDestroyed) return null;
 
-  const colorValue = color === 'green' ? '#2E8B57' : '#C41E3A';
-  const trailColor = color === 'green' ? '#4ADE80' : '#F87171';
-  
-  // Calculate energy level (0-1) based on health and speed
-  const velocity = Math.sqrt(
-    entity.velocity[0] ** 2 + entity.velocity[1] ** 2 + entity.velocity[2] ** 2
-  );
-  const energyLevel = Math.min((velocity / 50) * (entity.health / entity.maxHealth), 1);
+  const baseColor = color === 'green' ? '#2E8B57' : '#C41E3A';
 
   return (
     <group>
-      {/* Main jet body */}
-      <mesh ref={meshRef}>
-        <boxGeometry args={[3, 1, 1]} />
-        <meshStandardMaterial 
-          color={colorValue}
-          emissive={colorValue}
-          emissiveIntensity={0.3}
-        />
-      </mesh>
-
-      {/* Energy trail */}
-      {trailPositions.length > 1 && (
-        <primitive object={
-          (() => {
-            const geometry = new THREE.BufferGeometry().setFromPoints(trailPositions);
-            const material = new THREE.LineBasicMaterial({
-              color: trailColor,
-              transparent: true,
-              opacity: 0.4 * energyLevel,
-            });
-            return new THREE.Line(geometry, material);
-          })()
-        } />
-      )}
-
-      {/* Glow effect for high energy */}
-      {energyLevel > 0.7 && (
-        <mesh position={[0, 0, 0]}>
-          <sphereGeometry args={[2, 16, 16]} />
-          <meshBasicMaterial
-            color={colorValue}
-            transparent
-            opacity={0.2}
-          />
-        </mesh>
-      )}
+      <group ref={groupRef} scale={0.5}>
+        <mesh position={[0, 0, 0]}><boxGeometry args={[1, 0.8, 5]} /><meshStandardMaterial color={baseColor} /></mesh>
+        <mesh position={[0, 0, -0.5]}><boxGeometry args={[7, 0.2, 1.5]} /><meshStandardMaterial color={baseColor} /></mesh>
+        <mesh position={[0, 0.65, 1.5]}><boxGeometry args={[0.8, 0.5, 1]} /><meshStandardMaterial color={'#9999ff'} /></mesh>
+        <mesh position={[0, 1, -2]}><boxGeometry args={[0.2, 1.2, 0.8]} /><meshStandardMaterial color={baseColor} /></mesh>
+        <mesh position={[0, 0, -2]}><boxGeometry args={[2.5, 0.1, 0.8]} /><meshStandardMaterial color={baseColor} /></mesh>
+        {entity.isWrecked && (
+          <mesh scale={[0.5, 0.5, 1.5]}>
+            <sphereGeometry args={[1, 32, 16]} />
+            <meshStandardMaterial
+              color="orange"
+              emissive="orange"
+              emissiveIntensity={4}
+              transparent
+              opacity={0.6}
+              toneMapped={false}
+            />
+          </mesh>
+        )}
+      </group>
+      {entity.isWrecked ? <primitive object={smokeTrailLine} /> : <primitive object={trailLine} />}
     </group>
   );
 };

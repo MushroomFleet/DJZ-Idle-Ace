@@ -26,6 +26,24 @@ export interface BattleState {
 }
 
 // ============================================
+// COMBAT STATE TYPES (from PoC.tsx)
+// ============================================
+
+export interface BurstState {
+  active: boolean;
+  burstsLeft: number;
+  tracersLeftInBurst: number;
+  nextShotTimer: number;
+  isKillShot: boolean;
+}
+
+export interface FlareDeploymentState {
+  deploying: boolean;
+  flaresLeft: number;
+  nextFlareTimer: number;
+}
+
+// ============================================
 // BATTLE ENTITIES
 // ============================================
 
@@ -39,10 +57,11 @@ export interface BattleEntity {
   maxHealth: number;
   position: [number, number, number];
   velocity: [number, number, number];
-  rotation: [number, number, number];
+  quaternion: [number, number, number, number]; // For proper 3D rotation
 
   // Target
   targetId: string | null;
+  partnerId: string | null; // For wingman formations
 
   // Stats (from FighterJet + Pilot)
   weaponStrength: number;
@@ -53,10 +72,23 @@ export interface BattleEntity {
 
   // Combat Status
   isDestroyed: boolean;
+  isWrecked: boolean; // Separate from destroyed for wreckage physics
+  destroyedAt: number | null;
   isEscaping: boolean;
   killCount: number;
 
-  // Behavior State
+  // AI State (from PoC.tsx)
+  aiState: 'attacking' | 'following';
+  roleChangeTimer: number;
+  disengagementAltitude: number | null;
+
+  // Combat State
+  fireCooldown: number;
+  burstState: BurstState;
+  flareState: FlareDeploymentState;
+  wreckageAngularVelocity: [number, number, number] | null;
+
+  // Legacy behavior state (for compatibility)
   behaviorState: 'idle' | 'pursuing' | 'attacking' | 'evading' | 'regrouping' | 'escaping';
   behaviorTimer: number;
 }
