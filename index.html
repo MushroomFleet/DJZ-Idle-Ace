@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Idle Ace Commander</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'military-green': '#4A5D23',
+              'military-dark': '#2C3E12',
+              'military-tan': '#C9B896',
+              'enemy-red': '#C41E3A',
+              'allied-green': '#2E8B57',
+              'hud-blue': '#00B4D8',
+            },
+            fontFamily: {
+              'military': ['Courier New', 'monospace'],
+            }
+          }
+        }
+      }
+    </script>
+    
+    <!-- FontAwesome CDN -->
+    <link 
+      rel="stylesheet" 
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+      integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    />
+    
+    <!-- Three.js CDN -->
+    <script 
+      type="importmap"
+    >
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+        }
+      }
+    </script>
+    
+    <!-- Custom Styles -->
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
+      body {
+        font-family: 'Courier New', monospace;
+        background: #1a1a1a;
+        color: #fff;
+        overflow-x: hidden;
+      }
+      
+      #root {
+        width: 100vw;
+        min-height: 100vh;
+      }
+      
+      /* JRPG-style text animation */
+      @keyframes typewriter {
+        from { width: 0; }
+        to { width: 100%; }
+      }
+      
+      .typewriter-text {
+        overflow: hidden;
+        white-space: nowrap;
+        animation: typewriter 2s steps(40) forwards;
+      }
+      
+      /* Scanline effect for retro military feel */
+      .scanline-effect {
+        position: relative;
+      }
+      
+      .scanline-effect::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: repeating-linear-gradient(
+          0deg,
+          rgba(0, 0, 0, 0.1) 0px,
+          rgba(0, 0, 0, 0.1) 1px,
+          transparent 1px,
+          transparent 2px
+        );
+        pointer-events: none;
+        z-index: 10;
+      }
+    </style>
+    <meta property="og:title" content="Idle Ace Commander">
+  <meta name="twitter:title" content="Idle Ace Commander">
+  <meta name="description" content="Idle Ace Commander - with LLM immersion !">
+  <meta property="og:description" content="Idle Ace Commander - with LLM immersion !">
+  <meta name="twitter:description" content="Idle Ace Commander - with LLM immersion !">
+  <meta property="og:image" content="https://storage.googleapis.com/gpt-engineer-file-uploads/b4vlbCtCssOs8uIbxqOBFGtXQSE2/social-images/social-1761530807051-Screenshot 2025-10-27 020555.png">
+  <meta name="twitter:image" content="https://storage.googleapis.com/gpt-engineer-file-uploads/b4vlbCtCssOs8uIbxqOBFGtXQSE2/social-images/social-1761530807051-Screenshot 2025-10-27 020555.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta property="og:type" content="website">
+</head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
