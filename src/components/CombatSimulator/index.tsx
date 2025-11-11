@@ -169,7 +169,7 @@ const CombatSimulator: React.FC<CombatSimulatorProps> = ({ onMissionComplete }) 
       })()}
 
       {/* Event Log */}
-      <div className="absolute bottom-4 left-4 bg-gray-800 bg-opacity-90 p-4 rounded border-2 border-military-green max-w-md pointer-events-none">
+      <div className="absolute top-1/3 left-4 -translate-y-full -translate-y-4 bg-gray-800 bg-opacity-90 p-4 rounded border-2 border-military-green max-w-md pointer-events-none">
         <div className="text-xs text-gray-400 uppercase mb-2">Combat Log</div>
         <div className="space-y-1 text-sm max-h-32 overflow-y-auto">
           {battleState.executedEvents.slice(-5).map((event, i) => (
