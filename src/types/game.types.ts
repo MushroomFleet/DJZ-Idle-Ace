@@ -86,9 +86,10 @@ export interface Pilot {
   // Assignment
   assignedJetId: string | null;
 
-  // Experience
+  // Experience & Performance
   missionsFlown: number;
   kills: number;
+  survivalStreak: number; // Consecutive missions survived
 }
 
 // ============================================

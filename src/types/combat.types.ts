@@ -1,4 +1,10 @@
 // ============================================
+// IMPORTS
+// ============================================
+
+import * as THREE from 'three';
+
+// ============================================
 // BATTLE STATE
 // ============================================
 
@@ -19,10 +25,55 @@ export interface BattleState {
   executedEvents: BattleEvent[];
 
   // Visual Effects
-  projectiles: Projectile[];
+  tracers: TracerState[];
+  missiles: MissileState[];
+  flares: FlareState[];
 
   // Results
   results: BattleResults | null;
+}
+
+// ============================================
+// COMBAT STATE TYPES (from PoC.tsx)
+// ============================================
+
+export interface BurstState {
+  active: boolean;
+  burstsLeft: number;
+  tracersLeftInBurst: number;
+  nextShotTimer: number;
+  isKillShot: boolean;
+}
+
+export interface FlareDeploymentState {
+  deploying: boolean;
+  flaresLeft: number;
+  nextFlareTimer: number;
+}
+
+export interface TracerState {
+  id: string;
+  position: THREE.Vector3;
+  velocity: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+  life: number;
+}
+
+export interface MissileState {
+  id: string;
+  position: THREE.Vector3;
+  velocity: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+  life: number;
+  targetId: string | null;
+  willDetonate: boolean;
+}
+
+export interface FlareState {
+  id: string;
+  position: THREE.Vector3;
+  velocity: THREE.Vector3;
+  life: number;
 }
 
 // ============================================
@@ -39,10 +90,11 @@ export interface BattleEntity {
   maxHealth: number;
   position: [number, number, number];
   velocity: [number, number, number];
-  rotation: [number, number, number];
+  quaternion: [number, number, number, number]; // For proper 3D rotation
 
   // Target
   targetId: string | null;
+  partnerId: string | null; // For wingman formations
 
   // Stats (from FighterJet + Pilot)
   weaponStrength: number;
@@ -53,10 +105,23 @@ export interface BattleEntity {
 
   // Combat Status
   isDestroyed: boolean;
+  isWrecked: boolean; // Separate from destroyed for wreckage physics
+  destroyedAt: number | null;
   isEscaping: boolean;
   killCount: number;
 
-  // Behavior State
+  // AI State (from PoC.tsx)
+  aiState: 'attacking' | 'following';
+  roleChangeTimer: number;
+  disengagementAltitude: number | null;
+
+  // Combat State
+  fireCooldown: number;
+  burstState: BurstState;
+  flareState: FlareDeploymentState;
+  wreckageAngularVelocity: [number, number, number] | null;
+
+  // Legacy behavior state (for compatibility)
   behaviorState: 'idle' | 'pursuing' | 'attacking' | 'evading' | 'regrouping' | 'escaping';
   behaviorTimer: number;
 }
@@ -72,19 +137,6 @@ export interface BattleEvent {
   targetId: string;
   damage?: number;
   resultingHealth?: number;
-}
-
-// ============================================
-// PROJECTILES (VISUAL ONLY)
-// ============================================
-
-export interface Projectile {
-  id: string;
-  position: [number, number, number];
-  velocity: [number, number, number];
-  color: number;          // 0x00B4D8 (blue)
-  lifespan: number;       // ms remaining
-  createdAt: number;
 }
 
 // ============================================

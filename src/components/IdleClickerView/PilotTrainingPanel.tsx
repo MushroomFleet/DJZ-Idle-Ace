@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGameState } from '@/contexts/GameStateContext';
 import { Pilot } from '@/types/game.types';
 
@@ -7,6 +7,18 @@ const PilotTrainingPanel: React.FC = () => {
   const [selectedPilot, setSelectedPilot] = useState<Pilot | null>(
     gameState.pilots[0] || null
   );
+
+  // Update selectedPilot when pilots array changes
+  useEffect(() => {
+    if (selectedPilot) {
+      const updatedPilot = gameState.pilots.find(p => p.id === selectedPilot.id);
+      if (updatedPilot && updatedPilot !== selectedPilot) {
+        setSelectedPilot(updatedPilot);
+      }
+    } else if (gameState.pilots.length > 0) {
+      setSelectedPilot(gameState.pilots[0]);
+    }
+  }, [gameState.pilots, selectedPilot]);
 
   const TRAINING_COST = 50; // Credits per training session
   const TRAINING_AMOUNT = 10; // Progress gained per session
@@ -65,7 +77,7 @@ const PilotTrainingPanel: React.FC = () => {
       {/* Pilot Stats */}
       <div className="bg-gray-900 p-3 rounded mb-4">
         <div className="text-xs text-gray-400 uppercase mb-2">Combat Record</div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <div>
             <div className="text-sm text-gray-400">Missions</div>
             <div className="text-xl font-bold">{selectedPilot.missionsFlown}</div>
@@ -74,6 +86,12 @@ const PilotTrainingPanel: React.FC = () => {
             <div className="text-sm text-gray-400">Kills</div>
             <div className="text-xl font-bold text-enemy-red">
               {selectedPilot.kills}
+            </div>
+          </div>
+          <div>
+            <div className="text-sm text-gray-400">Survival Streak</div>
+            <div className="text-xl font-bold text-allied-green">
+              {selectedPilot.survivalStreak}
             </div>
           </div>
         </div>

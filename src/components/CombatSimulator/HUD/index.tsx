@@ -70,20 +70,21 @@ export const HUD: React.FC<HUDProps> = ({
         case 'm':
           cycleDisplayMode();
           break;
-        case 't':
+        case 't': {
           // Cycle through enemy targets
           const enemies = battleState.enemyJets.filter(j => !j.isDestroyed);
           if (enemies.length === 0) {
             setPrimaryTargetId(null);
             return;
           }
-          
-          const currentIndex = primaryTargetId 
+
+          const currentIndex = primaryTargetId
             ? enemies.findIndex(e => e.id === primaryTargetId)
             : -1;
           const nextIndex = (currentIndex + 1) % enemies.length;
           setPrimaryTargetId(enemies[nextIndex].id);
           break;
+        }
       }
     };
 
@@ -199,8 +200,8 @@ export const HUD: React.FC<HUDProps> = ({
           </HUDText>
         </div>
 
-        {/* HUD Controls Help (Bottom Right) */}
-        <div className="absolute bottom-4 right-4 bg-background/70 border border-primary/20 p-2 rounded text-xs space-y-1">
+        {/* HUD Controls Help (Middle Left) */}
+        <div className="absolute top-1/2 left-4 -translate-y-1/2 bg-background/70 border border-primary/20 p-2 rounded text-xs space-y-1">
           <HUDText size="xs" color="primary">CONTROLS:</HUDText>
           <div className="flex items-center gap-2 opacity-70">
             <span className="text-primary font-mono">[H]</span>

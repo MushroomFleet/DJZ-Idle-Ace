@@ -33,7 +33,9 @@ const ResearchPanel: React.FC = () => {
     if (gameState.research.inProgress) {
       const interval = setInterval(() => {
         const elapsed = Date.now() - (gameState.research.inProgress?.researchStartTime || 0);
-        const total = gameState.research.inProgress?.researchTime || 1;
+        // In DEBUG mode, research completes in 2 seconds regardless of actual researchTime
+        const DEBUG = true; // Same DEBUG flag as used elsewhere
+        const total = DEBUG ? 2000 : (gameState.research.inProgress?.researchTime || 1);
         const percentage = Math.min(100, (elapsed / total) * 100);
         setProgress(percentage);
 

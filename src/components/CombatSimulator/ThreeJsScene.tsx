@@ -1,23 +1,29 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
-import { BattleEntity, Projectile, BattleEvent } from '@/types/combat.types';
+import { BattleEntity, BattleEvent, TracerState, MissileState, FlareState } from '@/types/combat.types';
 
 interface ThreeJsSceneProps {
   alliedJets: BattleEntity[];
   enemyJets: BattleEntity[];
-  projectiles: Projectile[];
+  tracers: TracerState[];
+  missiles: MissileState[];
+  flares: FlareState[];
   recentEvents?: BattleEvent[];
 }
 
 const ThreeJsScene: React.FC<ThreeJsSceneProps> = ({
   alliedJets,
   enemyJets,
-  projectiles,
+  tracers,
+  missiles,
+  flares,
   recentEvents = [],
 }) => {
   const [explosions, setExplosions] = useState<Array<{ id: string; position: [number, number, number]; timestamp: number }>>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const controlsRef = useRef<any>(null);
 
   // Create explosions from recent destruction events
   useEffect(() => {
@@ -46,6 +52,31 @@ const ThreeJsScene: React.FC<ThreeJsSceneProps> = ({
     return () => clearInterval(interval);
   }, []);
 
+// Camera Controller Component (must be inside Canvas)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const CameraController: React.FC<{ alliedJets: BattleEntity[], controlsRef: React.RefObject<any> }> = ({ alliedJets, controlsRef }) => {
+  useFrame(() => {
+    if (controlsRef.current) {
+      const activeAlliedJets = alliedJets.filter(jet => !jet.isDestroyed && !jet.isWrecked);
+      if (activeAlliedJets.length > 0) {
+        // Calculate allied barycenter (center of mass)
+        const alliedBarycenter = new THREE.Vector3();
+        activeAlliedJets.forEach(jet => {
+          alliedBarycenter.add(new THREE.Vector3(jet.position[0], jet.position[1], jet.position[2]));
+        });
+        alliedBarycenter.divideScalar(activeAlliedJets.length);
+
+        // Smooth camera following with lerp
+        const CAMERA_TARGET_LERP_SPEED = 1.0;
+        controlsRef.current.target.lerp(alliedBarycenter, CAMERA_TARGET_LERP_SPEED * 0.016); // delta time approximation
+        controlsRef.current.update();
+      }
+    }
+  });
+
+  return null; // This component doesn't render anything
+};
+
   return (
     <Canvas 
       camera={{ position: [0, 50, 100], fov: 60 }}
@@ -68,23 +99,32 @@ const ThreeJsScene: React.FC<ThreeJsSceneProps> = ({
         <FighterJet key={jet.id} entity={jet} color="red" />
       ))}
 
-      {/* Projectiles with Trails */}
-      {projectiles.map((proj) => (
-        <ProjectileMesh key={proj.id} projectile={proj} />
+      {/* Tracers */}
+      {tracers.map((tracer) => (
+        <Tracer key={tracer.id} tracer={tracer} />
       ))}
 
-      {/* Explosions */}
-      {explosions.map((exp) => (
-        <Explosion key={exp.id} position={exp.position} timestamp={exp.timestamp} />
+      {/* Missiles */}
+      {missiles.map((missile) => (
+        <Missile key={missile.id} missile={missile} />
+      ))}
+
+      {/* Flares */}
+      {flares.map((flare) => (
+        <Flare key={flare.id} flare={flare} />
       ))}
 
       <OrbitControls
+        ref={controlsRef}
         enablePan={false}
         minDistance={50}
         maxDistance={200}
         enableDamping
         dampingFactor={0.05}
       />
+
+      {/* Camera Controller for dynamic following */}
+      <CameraController alliedJets={alliedJets} controlsRef={controlsRef} />
     </Canvas>
   );
 };
@@ -104,237 +144,249 @@ const ArenaSphere: React.FC = () => {
   );
 };
 
-// Fighter Jet Component with Energy Trail
+// Advanced Jet Component (adapted from PoC.tsx)
 interface FighterJetProps {
   entity: BattleEntity;
   color: 'green' | 'red';
 }
 
 const FighterJet: React.FC<FighterJetProps> = ({ entity, color }) => {
-  const meshRef = useRef<THREE.Mesh>(null);
-  const [trailPositions, setTrailPositions] = useState<THREE.Vector3[]>([]);
+  const groupRef = useRef<THREE.Group>(null);
+  const trailPoints = useRef<THREE.Vector3[]>([]).current;
+  const maxTrailPoints = 50;
+  const trailColor = color === 'green' ? '#4ADE80' : '#F87171';
+  const trailLine = useMemo(() => {
+    const geometry = new THREE.BufferGeometry();
+    const material = new THREE.LineBasicMaterial({ color: trailColor, transparent: true, opacity: 0.6 });
+    return new THREE.Line(geometry, material);
+  }, [trailColor]);
+
+  // Wreckage smoke trail
+  const smokeTrailPoints = useRef<THREE.Vector3[]>([]).current;
+  const maxSmokeTrailPoints = 400;
+  const smokeTrailLine = useMemo(() => {
+    const geometry = new THREE.BufferGeometry();
+    const material = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 1.0, linewidth: 3 });
+    return new THREE.Line(geometry, material);
+  }, []);
 
   useFrame(() => {
-    if (meshRef.current && !entity.isDestroyed) {
-      // Update position
-      const newPos = new THREE.Vector3(
-        entity.position[0],
-        entity.position[1],
-        entity.position[2]
-      );
-      meshRef.current.position.copy(newPos);
+    if (groupRef.current) {
+      const position = new THREE.Vector3(entity.position[0], entity.position[1], entity.position[2]);
+      const quaternion = new THREE.Quaternion(entity.quaternion[0], entity.quaternion[1], entity.quaternion[2], entity.quaternion[3]);
 
-      // Update rotation
-      meshRef.current.rotation.set(
-        entity.rotation[0],
-        entity.rotation[1],
-        entity.rotation[2]
-      );
+      groupRef.current.position.copy(position);
+      groupRef.current.quaternion.copy(quaternion);
 
-      // Update trail (keep last 15 positions)
-      setTrailPositions(prev => {
-        const updated = [...prev, newPos.clone()];
-        return updated.slice(-15);
-      });
+      if (entity.isWrecked) {
+        // Clear normal trail if it exists
+        if (trailPoints.length > 0) {
+          trailPoints.length = 0;
+          trailLine.geometry.dispose();
+          trailLine.geometry = new THREE.BufferGeometry();
+        }
+
+        // Update smoke trail
+        smokeTrailPoints.push(position);
+        if (smokeTrailPoints.length > maxSmokeTrailPoints) smokeTrailPoints.shift();
+
+        if (smokeTrailPoints.length > 1) {
+          smokeTrailLine.geometry.dispose();
+          smokeTrailLine.geometry = new THREE.BufferGeometry().setFromPoints(smokeTrailPoints);
+          const colors = [];
+          const yellow = new THREE.Color(0xffff99); // Fiery core
+          const orange = new THREE.Color(0xffa500); // Orange fire
+          const darkGray = new THREE.Color(0x222222); // Black smoke
+          for (let i = 0; i < smokeTrailPoints.length; i++) {
+            const t = i / (smokeTrailPoints.length - 1);
+            const color = new THREE.Color();
+            if (t > 0.8) { // Last 20% of the trail (closest to jet) is fiery yellow
+              color.lerpColors(orange, yellow, (t - 0.8) / 0.2);
+            } else { // First 80% is a gradient from dark gray to orange
+              color.lerpColors(darkGray, orange, t / 0.8);
+            }
+            colors.push(color.r, color.g, color.b);
+          }
+          smokeTrailLine.geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        }
+      } else {
+        groupRef.current.visible = true;
+        // Clear smoke trail if it exists
+        if (smokeTrailPoints.length > 0) {
+          smokeTrailPoints.length = 0;
+          smokeTrailLine.geometry.dispose();
+          smokeTrailLine.geometry = new THREE.BufferGeometry();
+        }
+
+        // Update normal trail
+        if (trailPoints.length > 0) {
+          const lastPoint = trailPoints[trailPoints.length - 1];
+          const teleportThreshold = 120; // WORLD_RADIUS
+          if (position.distanceTo(lastPoint) > teleportThreshold) {
+            trailPoints.length = 0;
+          }
+        }
+        trailPoints.push(position);
+        if (trailPoints.length > maxTrailPoints) trailPoints.shift();
+
+        trailLine.geometry.dispose();
+        if (trailPoints.length > 1) {
+          trailLine.geometry = new THREE.BufferGeometry().setFromPoints(trailPoints);
+        } else {
+          trailLine.geometry = new THREE.BufferGeometry();
+        }
+      }
     }
   });
 
   if (entity.isDestroyed) return null;
 
-  const colorValue = color === 'green' ? '#2E8B57' : '#C41E3A';
-  const trailColor = color === 'green' ? '#4ADE80' : '#F87171';
-  
-  // Calculate energy level (0-1) based on health and speed
-  const velocity = Math.sqrt(
-    entity.velocity[0] ** 2 + entity.velocity[1] ** 2 + entity.velocity[2] ** 2
-  );
-  const energyLevel = Math.min((velocity / 50) * (entity.health / entity.maxHealth), 1);
+  const baseColor = color === 'green' ? '#2E8B57' : '#C41E3A';
 
   return (
     <group>
-      {/* Main jet body */}
-      <mesh ref={meshRef}>
-        <boxGeometry args={[3, 1, 1]} />
-        <meshStandardMaterial 
-          color={colorValue}
-          emissive={colorValue}
-          emissiveIntensity={0.3}
-        />
-      </mesh>
-
-      {/* Energy trail */}
-      {trailPositions.length > 1 && (
-        <primitive object={
-          (() => {
-            const geometry = new THREE.BufferGeometry().setFromPoints(trailPositions);
-            const material = new THREE.LineBasicMaterial({
-              color: trailColor,
-              transparent: true,
-              opacity: 0.4 * energyLevel,
-            });
-            return new THREE.Line(geometry, material);
-          })()
-        } />
-      )}
-
-      {/* Glow effect for high energy */}
-      {energyLevel > 0.7 && (
-        <mesh position={[0, 0, 0]}>
-          <sphereGeometry args={[2, 16, 16]} />
-          <meshBasicMaterial
-            color={colorValue}
-            transparent
-            opacity={0.2}
-          />
-        </mesh>
-      )}
-    </group>
-  );
-};
-
-// Projectile Component with Smoke Trail
-interface ProjectileMeshProps {
-  projectile: Projectile;
-}
-
-const ProjectileMesh: React.FC<ProjectileMeshProps> = ({ projectile }) => {
-  const meshRef = useRef<THREE.Mesh>(null);
-  const [trailPositions, setTrailPositions] = useState<THREE.Vector3[]>([]);
-
-  useFrame(() => {
-    if (meshRef.current) {
-      const newPos = new THREE.Vector3(
-        projectile.position[0],
-        projectile.position[1],
-        projectile.position[2]
-      );
-      meshRef.current.position.copy(newPos);
-
-      // Update trail (keep last 8 positions for smoke effect)
-      setTrailPositions(prev => {
-        const updated = [...prev, newPos.clone()];
-        return updated.slice(-8);
-      });
-    }
-  });
-
-  return (
-    <group>
-      {/* Projectile */}
-      <mesh ref={meshRef}>
-        <sphereGeometry args={[0.5, 8, 8]} />
-        <meshStandardMaterial 
-          color="#00B4D8" 
-          emissive="#00B4D8"
-          emissiveIntensity={0.8}
-        />
-      </mesh>
-
-      {/* Smoke trail */}
-      {trailPositions.length > 1 && (
-        <primitive object={
-          (() => {
-            const geometry = new THREE.BufferGeometry().setFromPoints(trailPositions);
-            const material = new THREE.LineBasicMaterial({
-              color: '#FFFFFF',
-              transparent: true,
-              opacity: 0.3,
-            });
-            return new THREE.Line(geometry, material);
-          })()
-        } />
-      )}
-
-      {/* Glow effect */}
-      <mesh>
-        <sphereGeometry args={[1, 8, 8]} />
-        <meshBasicMaterial
-          color="#00B4D8"
-          transparent
-          opacity={0.3}
-        />
-      </mesh>
-    </group>
-  );
-};
-
-// Explosion Effect Component
-interface ExplosionProps {
-  position: [number, number, number];
-  timestamp: number;
-}
-
-const Explosion: React.FC<ExplosionProps> = ({ position, timestamp }) => {
-  const groupRef = useRef<THREE.Group>(null);
-  const [scale, setScale] = useState(0);
-  const age = (Date.now() - timestamp) / 1000; // seconds
-
-  useFrame(() => {
-    if (groupRef.current && age < 2) {
-      // Expand and fade
-      const progress = age / 2; // 0 to 1
-      setScale(1 + progress * 3);
-      groupRef.current.scale.set(scale, scale, scale);
-    }
-  });
-
-  if (age >= 2) return null;
-
-  const opacity = Math.max(0, 1 - age / 2);
-
-  return (
-    <group ref={groupRef} position={position}>
-      {/* Fireball */}
-      <mesh>
-        <sphereGeometry args={[3, 16, 16]} />
-        <meshBasicMaterial
-          color="#FF4500"
-          transparent
-          opacity={opacity * 0.8}
-        />
-      </mesh>
-
-      {/* Outer glow */}
-      <mesh>
-        <sphereGeometry args={[4, 16, 16]} />
-        <meshBasicMaterial
-          color="#FFA500"
-          transparent
-          opacity={opacity * 0.4}
-        />
-      </mesh>
-
-      {/* Flash */}
-      {age < 0.2 && (
-        <mesh>
-          <sphereGeometry args={[6, 16, 16]} />
-          <meshBasicMaterial
-            color="#FFFFFF"
-            transparent
-            opacity={0.8 * (1 - age / 0.2)}
-          />
-        </mesh>
-      )}
-
-      {/* Debris particles */}
-      {Array.from({ length: 8 }).map((_, i) => {
-        const angle = (i / 8) * Math.PI * 2;
-        const distance = age * 10;
-        const x = Math.cos(angle) * distance;
-        const y = Math.sin(angle) * distance;
-        const z = Math.sin(age * 5) * distance * 0.5;
-
-        return (
-          <mesh key={i} position={[x, y, z]}>
-            <boxGeometry args={[0.5, 0.5, 0.5]} />
-            <meshBasicMaterial
-              color="#2C2C2C"
+      <group ref={groupRef} scale={0.5}>
+        <mesh position={[0, 0, 0]}><boxGeometry args={[1, 0.8, 5]} /><meshStandardMaterial color={baseColor} /></mesh>
+        <mesh position={[0, 0, -0.5]}><boxGeometry args={[7, 0.2, 1.5]} /><meshStandardMaterial color={baseColor} /></mesh>
+        <mesh position={[0, 0.65, 1.5]}><boxGeometry args={[0.8, 0.5, 1]} /><meshStandardMaterial color={'#9999ff'} /></mesh>
+        <mesh position={[0, 1, -2]}><boxGeometry args={[0.2, 1.2, 0.8]} /><meshStandardMaterial color={baseColor} /></mesh>
+        <mesh position={[0, 0, -2]}><boxGeometry args={[2.5, 0.1, 0.8]} /><meshStandardMaterial color={baseColor} /></mesh>
+        {entity.isWrecked && (
+          <mesh scale={[0.5, 0.5, 1.5]}>
+            <sphereGeometry args={[1, 32, 16]} />
+            <meshStandardMaterial
+              color="orange"
+              emissive="orange"
+              emissiveIntensity={1}
               transparent
-              opacity={opacity}
+              opacity={0.6}
+              toneMapped={false}
             />
           </mesh>
-        );
-      })}
+        )}
+      </group>
+      {entity.isWrecked ? <primitive object={smokeTrailLine} /> : <primitive object={trailLine} />}
+    </group>
+  );
+};
+
+// Projectile Component with Smoke Trail - REMOVED for performance
+// The blue projectiles were causing FPS drops and are now replaced by the PoC firing system
+
+// Tracer Component (from PoC.tsx)
+interface TracerProps {
+  tracer: TracerState;
+}
+
+const Tracer: React.FC<TracerProps> = ({ tracer }) => {
+  const ref = useRef<THREE.Mesh>(null);
+
+  useFrame(() => {
+    if (ref.current) {
+      ref.current.position.copy(tracer.position);
+      ref.current.quaternion.copy(tracer.quaternion);
+    }
+  });
+
+  return (
+    <mesh ref={ref}>
+      <capsuleGeometry args={[0.1, 1.5, 4, 8]} />
+      <meshStandardMaterial color="yellow" emissive="yellow" emissiveIntensity={2} toneMapped={false} />
+    </mesh>
+  );
+};
+
+// Missile Component (from PoC.tsx)
+interface MissileProps {
+  missile: MissileState;
+}
+
+const Missile: React.FC<MissileProps> = ({ missile }) => {
+  const ref = useRef<THREE.Mesh>(null);
+  const trailPoints = useRef<THREE.Vector3[]>([]).current;
+  const maxTrailPoints = 30;
+
+  const trailLine = useMemo(() => {
+    const geometry = new THREE.BufferGeometry();
+    const material = new THREE.LineBasicMaterial({ color: '#CCCCCC', transparent: true, opacity: 0.5 });
+    return new THREE.Line(geometry, material);
+  }, []);
+
+  useFrame(() => {
+    if (ref.current) {
+      ref.current.position.copy(missile.position);
+      ref.current.quaternion.copy(missile.quaternion);
+
+      trailPoints.push(ref.current.position.clone());
+      if (trailPoints.length > maxTrailPoints) {
+        trailPoints.shift();
+      }
+
+      if (trailPoints.length > 1) {
+        trailLine.geometry.dispose();
+        trailLine.geometry = new THREE.BufferGeometry().setFromPoints(trailPoints);
+      }
+    }
+  });
+
+  return (
+    <group>
+      <mesh ref={ref}>
+        <cylinderGeometry args={[0.2, 0.2, 3, 8]} />
+        <meshStandardMaterial color="white" emissive="white" emissiveIntensity={1} toneMapped={false} />
+      </mesh>
+      <primitive object={trailLine} />
+    </group>
+  );
+};
+
+// Flare Component (from PoC.tsx)
+interface FlareProps {
+  flare: FlareState;
+}
+
+const Flare: React.FC<FlareProps> = ({ flare }) => {
+  const ref = useRef<THREE.Mesh>(null);
+  const trailPoints = useRef<THREE.Vector3[]>([]).current;
+  const maxTrailPoints = 20;
+
+  const trailLine = useMemo(() => {
+    const geometry = new THREE.BufferGeometry();
+    const material = new THREE.LineBasicMaterial({ color: '#FFFFFF', transparent: true, opacity: 0.8, vertexColors: true });
+    return new THREE.Line(geometry, material);
+  }, []);
+
+  useFrame(() => {
+    if (ref.current) {
+      ref.current.position.copy(flare.position);
+      trailPoints.push(ref.current.position.clone());
+      if (trailPoints.length > maxTrailPoints) {
+        trailPoints.shift();
+      }
+
+      if (trailPoints.length > 1) {
+        trailLine.geometry.dispose();
+        trailLine.geometry = new THREE.BufferGeometry().setFromPoints(trailPoints);
+        const colors = [];
+        const white = new THREE.Color(0xffffff);
+        const gray = new THREE.Color(0x888888);
+        for (let i = 0; i < trailPoints.length; i++) {
+          const t = i / (trailPoints.length - 1);
+          const color = new THREE.Color().lerpColors(gray, white, t);
+          colors.push(color.r, color.g, color.b);
+        }
+        trailLine.geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      }
+    }
+  });
+
+  return (
+    <group>
+      <mesh ref={ref}>
+        <sphereGeometry args={[0.3, 8, 8]} />
+        <meshStandardMaterial color="white" emissive="white" emissiveIntensity={4} toneMapped={false} />
+      </mesh>
+      <primitive object={trailLine} />
     </group>
   );
 };
