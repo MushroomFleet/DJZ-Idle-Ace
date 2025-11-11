@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useGameState } from '@/contexts/GameStateContext';
 import { useNarrative } from '@/contexts/NarrativeContext';
 import { useOpenRouter } from '@/hooks/useOpenRouter';
+import { BattleResults } from '@/types/combat.types';
 import Header from '@/components/Header';
 import IdleClickerView from '@/components/IdleClickerView';
 import CombatSimulator from '@/components/CombatSimulator';
@@ -9,10 +10,7 @@ import GeneralMartinModal from '@/components/GeneralMartinModal';
 import TutorialModal from '@/components/TutorialModal';
 import {
   generateMissionBriefingPrompt,
-  generateMissionResultsPrompt,
   FALLBACK_BRIEFING,
-  FALLBACK_VICTORY,
-  FALLBACK_DEFEAT,
 } from '@/utils/dialogueGenerator';
 
 const App: React.FC = () => {
@@ -41,8 +39,6 @@ const App: React.FC = () => {
       }, 300);
     }
   }, [gameState.currentView, previousView]);
-  const [missionResults, setMissionResults] = useState<any>(null);
-
   // Handle mission briefing
   useEffect(() => {
     if (gameState.currentView === 'general-briefing' && gameState.currentMission) {
@@ -78,46 +74,6 @@ const App: React.FC = () => {
     }
   }, [gameState.currentView, gameState.currentMission]);
 
-  // Handle mission results
-  useEffect(() => {
-    if (gameState.currentView === 'general-results' && missionResults) {
-      const generateResults = async () => {
-        const apiKey = localStorage.getItem('idle-ace-api-key') || '';
-        const model = localStorage.getItem('idle-ace-model') || 'x-ai/grok-4-fast';
-
-        let resultsText = missionResults.victory ? FALLBACK_VICTORY : FALLBACK_DEFEAT;
-
-        if (apiKey && gameState.currentMission) {
-          const messages = generateMissionResultsPrompt(
-            gameState.currentMission,
-            missionResults,
-            narrativeState.warProgress
-          );
-
-          const response = await sendChatCompletion(apiKey, model, messages);
-          if (response) {
-            resultsText = response;
-          }
-        }
-
-        addDialogue({
-          id: `results-${Date.now()}`,
-          type: 'mission-result',
-          speaker: 'general-martin',
-          text: resultsText,
-          timestamp: Date.now(),
-          dismissed: false,
-          metadata: {
-            victory: missionResults.victory,
-            casualtyCount: missionResults.destroyedAllied,
-          },
-        });
-      };
-
-      generateResults();
-    }
-  }, [gameState.currentView, missionResults]);
-
   const handleDialogueDismiss = () => {
     if (narrativeState.currentDialogue) {
       dismissDialogue(narrativeState.currentDialogue.id);
@@ -125,16 +81,14 @@ const App: React.FC = () => {
       // Proceed based on dialogue type
       if (narrativeState.currentDialogue.type === 'mission-brief') {
         setCurrentView('combat');
-      } else if (narrativeState.currentDialogue.type === 'mission-result') {
-        setCurrentView('idle');
-        setMissionResults(null);
       }
     }
   };
 
-  const handleMissionComplete = (results: any) => {
-    setMissionResults(results);
-    setCurrentView('general-results');
+  const handleMissionComplete = (results: BattleResults) => {
+    // Mission results are now handled directly in CombatSimulator/ResultsScreen
+    // When ResultsScreen is dismissed, transition back to idle view
+    setCurrentView('idle');
   };
 
   return (
@@ -153,8 +107,9 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* General Martin Modal */}
-      {narrativeState.currentDialogue && !narrativeState.currentDialogue.dismissed && (
+      {/* General Martin Modal - Only show for non-mission-result dialogues or when not in combat */}
+      {narrativeState.currentDialogue && !narrativeState.currentDialogue.dismissed &&
+       (narrativeState.currentDialogue.type !== 'mission-result' || gameState.currentView !== 'combat') && (
         <GeneralMartinModal
           dialogue={narrativeState.currentDialogue}
           onDismiss={handleDialogueDismiss}

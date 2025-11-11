@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { BattleState, BattleEntity, BattleEvent, Projectile } from '@/types/combat.types';
+import { BattleState, BattleEntity, BattleEvent } from '@/types/combat.types';
 import { FighterJet, Pilot, Mission } from '@/types/game.types';
 import { calculateBattleOutcome } from '@/utils/combatCalculations';
 import * as THREE from 'three';
@@ -96,6 +96,11 @@ export const useBattleSimulation = (
       const angle = (i / mission.enemyCount) * Math.PI * 2;
       const radius = 60;
 
+      // Pair up enemy jets: even indices attack, odd indices follow their even partner
+      const isPaired = i % 2 === 0 && i + 1 < mission.enemyCount;
+      const partnerIndex = isPaired ? i + 1 : (i % 2 === 1 ? i - 1 : null);
+      const aiState = i % 2 === 0 ? 'attacking' : 'following';
+
       return {
         id: `enemy-${i}`,
         originalJetId: '',
@@ -106,7 +111,7 @@ export const useBattleSimulation = (
         velocity: [0, 0, 0],
         quaternion: [0, 0, 0, 1], // Identity quaternion
         targetId: null,
-        partnerId: null,
+        partnerId: partnerIndex !== null ? `enemy-${partnerIndex}` : null,
         weaponStrength: mission.enemyStats.weaponStrength,
         speed: mission.enemyStats.speed,
         agility: mission.enemyStats.agility,
@@ -117,8 +122,8 @@ export const useBattleSimulation = (
         destroyedAt: null,
         isEscaping: false,
         killCount: 0,
-        aiState: 'attacking',
-        roleChangeTimer: 0,
+        aiState: aiState as 'attacking' | 'following',
+        roleChangeTimer: aiState === 'attacking' ? ROLE_SWAP_BASE_TIME + (Math.random() - 0.5) * 2 * ROLE_SWAP_RANDOMNESS : 0,
         disengagementAltitude: null,
         fireCooldown: Math.random() * 3,
         burstState: { active: false, burstsLeft: 0, tracersLeftInBurst: 0, nextShotTimer: 0, isKillShot: false },
@@ -129,21 +134,20 @@ export const useBattleSimulation = (
       };
     });
 
-    setBattleState({
-      status: 'active',
-      startTime: Date.now(),
-      endTime: null,
-      alliedJets,
-      enemyJets,
-      playerTactic: tactic,
-      scheduledEvents: events,
-      executedEvents: [],
-      projectiles: [],
-      tracers: [],
-      missiles: [],
-      flares: [],
-      results,
-    });
+        setBattleState({
+          status: 'active',
+          startTime: Date.now(),
+          endTime: null,
+          alliedJets,
+          enemyJets,
+          playerTactic: tactic,
+          scheduledEvents: events,
+          executedEvents: [],
+          tracers: [],
+          missiles: [],
+          flares: [],
+          results,
+        });
   }, [squadron, pilots, mission, tactic]);
 
   // Update battle state
@@ -155,40 +159,16 @@ export const useBattleSimulation = (
 
       // Execute scheduled events
       const newExecutedEvents: BattleEvent[] = [];
-      const newProjectiles: Projectile[] = [...battleState.projectiles];
 
       battleState.scheduledEvents.forEach((event) => {
         if (event.timestamp <= elapsed && !battleState.executedEvents.includes(event)) {
           newExecutedEvents.push(event);
 
-          // Create projectile visual effect
-          if (event.type === 'hit' || event.type === 'destroy') {
-            const attacker =
-              [...battleState.alliedJets, ...battleState.enemyJets].find(
-                (j) => j.id === event.attackerId
-              );
-
-            if (attacker) {
-              newProjectiles.push({
-                id: `proj-${Date.now()}-${Math.random()}`,
-                position: [...attacker.position] as [number, number, number],
-                velocity: [
-                  (Math.random() - 0.5) * 5,
-                  (Math.random() - 0.5) * 5,
-                  (Math.random() - 0.5) * 5,
-                ],
-                color: 0x00b4d8,
-                lifespan: 2000,
-                createdAt: Date.now(),
-              });
-            }
-          }
-
           // Mark entities as destroyed
           if (event.type === 'destroy') {
             setBattleState((prev) => {
               if (!prev) return null;
-              
+
               return {
                 ...prev,
                 alliedJets: prev.alliedJets.map((j) =>
@@ -204,7 +184,9 @@ export const useBattleSimulation = (
       });
 
       // Realistic AI physics and movement (adapted from PoC.tsx)
-      const delta = 0.016; // ~60 FPS
+      // Frame rate limiting to prevent physics instability
+      let delta = 0.016; // ~60 FPS
+      if (delta > 0.1) delta = 0.1; // Frame rate limiter
       const tempMatrix = new THREE.Matrix4();
       const targetQuaternion = new THREE.Quaternion();
 
@@ -218,11 +200,66 @@ export const useBattleSimulation = (
       const activeAlliedJets = battleState.alliedJets.filter(j => j.team === 'allied' && !j.isDestroyed && !j.isWrecked);
       const activeEnemyJets = battleState.enemyJets.filter(j => j.team === 'enemy' && !j.isDestroyed && !j.isWrecked);
 
+      // Initialize combat effect arrays
+      const newTracers = [...battleState.tracers];
+      let newMissiles = [...battleState.missiles];
+      const newFlares = [...battleState.flares];
+
+      // --- Missile Detonation & Wreckage Creation ---
+      const destroyedJetIds = new Set<string>();
+      newMissiles = newMissiles.filter(missile => {
+        const targetJet = allJets.find(j => j.id === missile.targetId && !j.isWrecked && !j.isDestroyed);
+        if (targetJet && missile.position.distanceTo(convertToVector3(targetJet.position)) < MISSILE_PROXIMITY_DETONATION_RANGE) {
+          if (missile.willDetonate) {
+            if (!destroyedJetIds.has(targetJet.id)) {
+              destroyedJetIds.add(targetJet.id);
+            }
+            return false; // Missile is consumed
+          } else {
+            missile.targetId = null; // Dud missile, continues on its path
+          }
+        }
+        return true;
+      });
+
+      // Apply missile damage to jets
+      if (destroyedJetIds.size > 0) {
+        allJets.forEach(jet => {
+          if (destroyedJetIds.has(jet.id)) {
+            jet.isWrecked = true;
+            jet.destroyedAt = Date.now();
+            // Add explosion impulse
+            const velocity = convertToVector3(jet.velocity);
+            velocity.add(new THREE.Vector3((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20));
+            jet.velocity = convertFromVector3(velocity);
+            // Add initial angular velocity for spinning
+            jet.wreckageAngularVelocity = [
+              (Math.random() - 0.5) * 10, // roll
+              (Math.random() - 0.5) * 5,  // pitch
+              (Math.random() - 0.5) * 10  // yaw
+            ];
+          }
+        });
+      }
+
       // Calculate allied barycenter for cohesion
       const alliedBarycenter = new THREE.Vector3();
       if (activeAlliedJets.length > 0) {
         activeAlliedJets.forEach(j => alliedBarycenter.add(convertToVector3(j.position)));
         alliedBarycenter.divideScalar(activeAlliedJets.length);
+      }
+
+      // --- Green Team Target Swapping ---
+      // Green jets swap targets periodically
+      const greenTargetSwapTimer = Math.floor(Date.now() / 1000) % GREEN_TARGET_SWAP_TIME;
+      if (greenTargetSwapTimer === 0) {
+        const greenJetsToSwap = allJets.filter(j => j.team === 'allied' && !j.isDestroyed && !j.isWrecked);
+        if (greenJetsToSwap.length >= 2) {
+          // Simple target swapping - swap targets between first two green jets
+          const tempTargetId = greenJetsToSwap[0].targetId;
+          greenJetsToSwap[0].targetId = greenJetsToSwap[1].targetId;
+          greenJetsToSwap[1].targetId = tempTargetId;
+        }
       }
 
       // Update each jet with AI physics
@@ -282,6 +319,26 @@ export const useBattleSimulation = (
             }
           }
         } else if (jet.team === 'enemy') {
+          // Red team AI role swapping
+          if (jet.aiState === 'attacking') {
+            jet.roleChangeTimer -= delta;
+            if (jet.roleChangeTimer <= 0) {
+              const partner = allJets.find(j => j.id === jet.partnerId);
+              if (partner) {
+                const oldTargetId = jet.targetId;
+                jet.aiState = 'following';
+                jet.targetId = partner.id;
+                jet.disengagementAltitude = convertToVector3(jet.position).y + (Math.random() > 0.5 ? 1 : -1) * DISENGAGE_ALTITUDE_RANGE;
+
+                partner.aiState = 'attacking';
+                partner.targetId = oldTargetId;
+                partner.roleChangeTimer = ROLE_SWAP_BASE_TIME + (Math.random() - 0.5) * 2 * ROLE_SWAP_RANDOMNESS;
+                partner.disengagementAltitude = null;
+              }
+              jet.roleChangeTimer = 999; // wait for partner to assign new time
+            }
+          }
+
           // Enemy AI - attack allied jets
           if (!target) {
             const allies = allJets.filter(j => j.team === 'allied' && !j.isDestroyed && !j.isWrecked);
@@ -296,7 +353,21 @@ export const useBattleSimulation = (
         let pointToLookAt: THREE.Vector3;
 
         if (target) {
-          pointToLookAt = convertToVector3(target.position);
+          // Red team following behavior
+          if (jet.team === 'enemy' && jet.aiState === 'following') {
+            const leader = allJets.find(j => j.id === jet.targetId);
+            if (leader) {
+              const leaderForward = new THREE.Vector3(0, 0, 1).applyQuaternion(convertToQuaternion(leader.quaternion));
+              pointToLookAt = convertToVector3(leader.position).clone().sub(leaderForward.multiplyScalar(15));
+              if (jet.disengagementAltitude !== null) {
+                pointToLookAt.y = jet.disengagementAltitude;
+              }
+            } else {
+              pointToLookAt = convertToVector3(jet.position).clone().add(new THREE.Vector3(0, 0, 1).applyQuaternion(convertToQuaternion(jet.quaternion)));
+            }
+          } else {
+            pointToLookAt = convertToVector3(target.position);
+          }
 
           // Allied team cohesion and avoidance
           if (jet.team === 'allied' && activeAlliedJets.length > 1) {
@@ -357,6 +428,149 @@ export const useBattleSimulation = (
           position.negate();
         }
 
+        // --- FIRING LOGIC ---
+        if (jet.aiState === 'attacking' && target && jet.team === 'enemy') {
+          const forwardDir = new THREE.Vector3(0, 0, 1).applyQuaternion(quaternion);
+          const dirToTarget = convertToVector3(target.position).clone().sub(position).normalize();
+          const dotProduct = forwardDir.dot(dirToTarget);
+          const isTargetInFront = dotProduct > FIRING_CONE_DOT_PRODUCT;
+          const distanceToTarget = position.distanceTo(convertToVector3(target.position));
+
+          jet.fireCooldown -= delta;
+          if (jet.fireCooldown <= 0 && !jet.burstState.active && isTargetInFront) {
+
+            if (distanceToTarget > WEAPON_RANGE_THRESHOLD) {
+              // Long range: Fire missile
+              const fireDirection = new THREE.Vector3(0, 0, 1).applyQuaternion(quaternion);
+              const missileVelocity = fireDirection.multiplyScalar(MISSILE_SPEED);
+              const finalVelocity = convertToVector3(jet.velocity).clone().add(missileVelocity);
+              const missileQuaternion = new THREE.Quaternion();
+              missileQuaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), finalVelocity.clone().normalize());
+
+              newMissiles.push({
+                id: `m_${jet.id}_${Date.now()}`,
+                position: position.clone(),
+                velocity: finalVelocity,
+                quaternion: missileQuaternion,
+                life: MISSILE_LIFESPAN,
+                targetId: jet.targetId,
+                willDetonate: Math.random() < 0.8,
+              });
+
+              // Trigger flares on target
+              const targetJet = allJets.find(j => j.id === jet.targetId && !j.isDestroyed && !j.isWrecked);
+              if (targetJet && !targetJet.flareState.deploying) {
+                targetJet.flareState.deploying = true;
+                targetJet.flareState.flaresLeft = FLARES_TO_DEPLOY;
+                targetJet.flareState.nextFlareTimer = 0;
+              }
+
+              jet.fireCooldown = FIRING_COOLDOWN + (Math.random() - 0.5);
+            } else {
+              // Close range: Fire tracers
+              jet.burstState.active = true;
+              jet.burstState.burstsLeft = BURST_COUNT;
+              jet.burstState.tracersLeftInBurst = TRACERS_PER_BURST;
+              jet.burstState.nextShotTimer = 0;
+              jet.fireCooldown = FIRING_COOLDOWN + (Math.random() - 0.5);
+            }
+          }
+        }
+
+        // --- BURST FIRING ---
+        if (jet.burstState.active && target) {
+          jet.burstState.nextShotTimer -= delta;
+          if (jet.burstState.nextShotTimer <= 0) {
+            const fireDirection = new THREE.Vector3(0, 0, 1).applyQuaternion(quaternion);
+            fireDirection.add(new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(0.02)).normalize();
+
+            const tracerVelocity = convertToVector3(jet.velocity).clone().add(fireDirection.multiplyScalar(TRACER_SPEED));
+            const tracerQuaternion = new THREE.Quaternion();
+            tracerQuaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tracerVelocity.clone().normalize());
+
+            newTracers.push({
+              id: `t_${jet.id}_${Date.now()}_${Math.random()}`,
+              position: position.clone(),
+              velocity: tracerVelocity,
+              quaternion: tracerQuaternion,
+              life: TRACER_LIFESPAN
+            });
+
+            // Kill shot logic
+            if (jet.burstState.isKillShot) {
+              const targetJet = allJets.find(j => j.id === jet.targetId && !j.isDestroyed && !j.isWrecked);
+              if (targetJet) {
+                targetJet.isWrecked = true;
+                targetJet.destroyedAt = Date.now();
+                targetJet.wreckageAngularVelocity = [
+                  (Math.random() - 0.5) * 10,
+                  (Math.random() - 0.5) * 5,
+                  (Math.random() - 0.5) * 10
+                ];
+              }
+              jet.burstState.active = false;
+              jet.burstState.isKillShot = false;
+            }
+
+            if (jet.burstState.active) {
+              jet.burstState.tracersLeftInBurst--;
+              if (jet.burstState.tracersLeftInBurst <= 0) {
+                jet.burstState.burstsLeft--;
+                if (jet.burstState.burstsLeft <= 0) {
+                  jet.burstState.active = false;
+                  jet.burstState.isKillShot = false;
+                } else {
+                  jet.burstState.tracersLeftInBurst = TRACERS_PER_BURST;
+                  jet.burstState.nextShotTimer = TIME_BETWEEN_BURSTS;
+                  if (jet.burstState.burstsLeft === 1 && Math.random() < 0.5) {
+                    jet.burstState.isKillShot = true;
+                  } else {
+                    jet.burstState.isKillShot = false;
+                  }
+                }
+              } else {
+                jet.burstState.nextShotTimer = TIME_BETWEEN_TRACERS;
+              }
+            }
+          }
+        }
+
+        // --- FLARE DEPLOYMENT ---
+        if (jet.flareState.deploying) {
+          jet.flareState.nextFlareTimer -= delta;
+          if (jet.flareState.nextFlareTimer <= 0 && jet.flareState.flaresLeft > 0) {
+            const right = new THREE.Vector3(1, 0, 0).applyQuaternion(quaternion);
+            const back = new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion);
+
+            // Left flare
+            const leftVel = right.clone().negate().add(back.clone().multiplyScalar(0.5)).normalize().multiplyScalar(FLARE_EJECTION_SPEED);
+            const leftPos = position.clone().add(right.clone().negate().multiplyScalar(FLARE_WING_OFFSET));
+            newFlares.push({
+              id: `f_${jet.id}_${Date.now()}_l`,
+              position: leftPos,
+              velocity: leftVel,
+              life: FLARE_LIFESPAN
+            });
+
+            // Right flare
+            const rightVel = right.clone().add(back.clone().multiplyScalar(0.5)).normalize().multiplyScalar(FLARE_EJECTION_SPEED);
+            const rightPos = position.clone().add(right.clone().multiplyScalar(FLARE_WING_OFFSET));
+            newFlares.push({
+              id: `f_${jet.id}_${Date.now()}_r`,
+              position: rightPos,
+              velocity: rightVel,
+              life: FLARE_LIFESPAN
+            });
+
+            jet.flareState.flaresLeft -= 2;
+            if (jet.flareState.flaresLeft <= 0) {
+              jet.flareState.deploying = false;
+            } else {
+              jet.flareState.nextFlareTimer = TIME_BETWEEN_FLARE_PAIRS;
+            }
+          }
+        }
+
         return {
           ...jet,
           position: convertFromVector3(position),
@@ -367,11 +581,6 @@ export const useBattleSimulation = (
 
       const updatedAllied = battleState.alliedJets.map(updateJet);
       const updatedEnemy = battleState.enemyJets.map(updateJet);
-
-      // Remove old projectiles
-      const activeProjectiles = newProjectiles.filter(
-        (p) => Date.now() - p.createdAt < p.lifespan
-      );
 
       // Check if battle should end (only if not in DEBUG mode)
       if (!DEBUG && elapsed >= 30000) {
@@ -386,6 +595,58 @@ export const useBattleSimulation = (
         );
         return;
       }
+
+      // Update combat effects
+      // Update tracers
+      const updatedTracers = newTracers.map(tracer => ({
+        ...tracer,
+        position: tracer.position.clone().add(tracer.velocity.clone().multiplyScalar(delta)),
+        life: tracer.life - delta,
+      })).filter(tracer => tracer.life > 0);
+
+      // Update missiles
+      const updatedMissiles = newMissiles.map(missile => {
+        const missileState = {...missile};
+        const newVelocity = missileState.velocity.clone();
+        const currentTarget = allJets.find(j => j.id === missileState.targetId && !j.isWrecked && !j.isDestroyed);
+
+        if (currentTarget) {
+          const targetForward = new THREE.Vector3(0, 0, 1).applyQuaternion(convertToQuaternion(currentTarget.quaternion));
+          const leadPoint = convertToVector3(currentTarget.position).clone().add(targetForward.multiplyScalar(LEAD_TARGET_DISTANCE));
+
+          const desiredDirection = leadPoint.sub(missileState.position).normalize();
+          const desiredVelocity = desiredDirection.multiplyScalar(MISSILE_SPEED);
+
+          newVelocity.lerp(desiredVelocity, delta * MISSILE_TURN_SPEED);
+        }
+
+        newVelocity.normalize().multiplyScalar(MISSILE_SPEED);
+        const newPosition = missileState.position.clone().add(newVelocity.clone().multiplyScalar(delta));
+        const newQuaternion = new THREE.Quaternion();
+        newQuaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), newVelocity.clone().normalize());
+
+        return {
+          ...missileState,
+          position: newPosition,
+          velocity: newVelocity,
+          quaternion: newQuaternion,
+          life: missileState.life - delta,
+        };
+      }).filter(missile => missile.life > 0);
+
+      // Update flares
+      const updatedFlares = newFlares.map(flare => {
+        const newVelocity = flare.velocity.clone();
+        newVelocity.y -= 9.8 * delta; // Gravity
+        newVelocity.multiplyScalar(1 - (delta * FLARE_DRAG)); // Drag
+
+        return {
+          ...flare,
+          position: flare.position.clone().add(newVelocity.clone().multiplyScalar(delta)),
+          velocity: newVelocity,
+          life: flare.life - delta,
+        };
+      }).filter(flare => flare.life > 0);
 
       // Handle respawns in DEBUG mode
       if (DEBUG) {
@@ -428,7 +689,9 @@ export const useBattleSimulation = (
                 alliedJets: respawnedAllied,
                 enemyJets: respawnedEnemy,
                 executedEvents: [...prev.executedEvents, ...newExecutedEvents],
-                projectiles: activeProjectiles,
+                tracers: updatedTracers,
+                missiles: updatedMissiles,
+                flares: updatedFlares,
               }
             : null
         );
@@ -442,7 +705,6 @@ export const useBattleSimulation = (
               alliedJets: updatedAllied,
               enemyJets: updatedEnemy,
               executedEvents: [...prev.executedEvents, ...newExecutedEvents],
-              projectiles: activeProjectiles,
             }
           : null
       );

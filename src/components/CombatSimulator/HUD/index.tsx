@@ -70,20 +70,21 @@ export const HUD: React.FC<HUDProps> = ({
         case 'm':
           cycleDisplayMode();
           break;
-        case 't':
+        case 't': {
           // Cycle through enemy targets
           const enemies = battleState.enemyJets.filter(j => !j.isDestroyed);
           if (enemies.length === 0) {
             setPrimaryTargetId(null);
             return;
           }
-          
-          const currentIndex = primaryTargetId 
+
+          const currentIndex = primaryTargetId
             ? enemies.findIndex(e => e.id === primaryTargetId)
             : -1;
           const nextIndex = (currentIndex + 1) % enemies.length;
           setPrimaryTargetId(enemies[nextIndex].id);
           break;
+        }
       }
     };
 

@@ -25,7 +25,6 @@ export interface BattleState {
   executedEvents: BattleEvent[];
 
   // Visual Effects
-  projectiles: Projectile[];
   tracers: TracerState[];
   missiles: MissileState[];
   flares: FlareState[];
@@ -138,19 +137,6 @@ export interface BattleEvent {
   targetId: string;
   damage?: number;
   resultingHealth?: number;
-}
-
-// ============================================
-// PROJECTILES (VISUAL ONLY)
-// ============================================
-
-export interface Projectile {
-  id: string;
-  position: [number, number, number];
-  velocity: [number, number, number];
-  color: number;          // 0x00B4D8 (blue)
-  lifespan: number;       // ms remaining
-  createdAt: number;
 }
 
 // ============================================

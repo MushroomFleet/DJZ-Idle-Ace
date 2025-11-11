@@ -1,6 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { GameState, FighterJet, Pilot, Mission, TechNode } from '@/types/game.types';
 
+// Debug mode for faster mission timers
+const DEBUG = true;
+
 // ============================================
 // CONTEXT TYPE
 // ============================================
@@ -132,7 +135,7 @@ const createInitialState = (): GameState => ({
     available: [],
     completed: [],
     lastCompletedTime: 0,
-    nextMissionTime: Date.now() + 60000, // 1 minute from now
+    nextMissionTime: Date.now() + (DEBUG ? 2000 : 60000), // 2 seconds in DEBUG, 1 minute otherwise
   },
 
   settings: {
@@ -283,7 +286,7 @@ export const GameStateProvider: React.FC<{ children: ReactNode }> = ({ children 
         ...prev.missions,
         completed: [...prev.missions.completed, mission],
         lastCompletedTime: Date.now(),
-        nextMissionTime: Date.now() + 60000, // Next mission available in 1 minute
+        nextMissionTime: Date.now() + (DEBUG ? 2000 : 60000), // Next mission available in 2 seconds (DEBUG) or 1 minute
       },
     }));
   };

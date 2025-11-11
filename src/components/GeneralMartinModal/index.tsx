@@ -20,7 +20,7 @@ const GeneralMartinModal: React.FC<GeneralMartinModalProps> = ({ dialogue, onDis
       speak(dialogue.text);
     }
     return () => stop();
-  }, [dialogue.id]);
+  }, [dialogue.id, dialogue.text, gameState.settings.tts?.enabled, speak, stop]);
 
   // Typewriter effect
   useEffect(() => {

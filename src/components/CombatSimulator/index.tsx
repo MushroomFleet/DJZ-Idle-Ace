@@ -21,11 +21,12 @@ interface CombatSimulatorProps {
 const CombatSimulator: React.FC<CombatSimulatorProps> = ({ onMissionComplete }) => {
   const { gameState, setCurrentView, updateResources, updateHighScore, addCompletedMission } =
     useGameState();
-  const { narrativeState, addDialogue } = useNarrative();
+  const { narrativeState } = useNarrative();
   const { sendChatCompletion } = useOpenRouter();
   const [tactic, setTactic] = useState<'aggressive' | 'defensive'>('aggressive');
   const [hasGeneratedResults, setHasGeneratedResults] = useState(false);
   const [hasAppliedRewards, setHasAppliedRewards] = useState(false);
+  const [resultsDialogue, setResultsDialogue] = useState<string>('');
 
   const { battleState, initializeBattle, forceEndBattle } = useBattleSimulation(
     gameState.squadron,
@@ -94,19 +95,7 @@ const CombatSimulator: React.FC<CombatSimulatorProps> = ({ onMissionComplete }) 
         }
       }
 
-      addDialogue({
-        id: `results-${Date.now()}`,
-        type: 'mission-result',
-        speaker: 'general-martin',
-        text: resultsText,
-        timestamp: Date.now(),
-        dismissed: false,
-        metadata: {
-          missionId: gameState.currentMission.id,
-          victory: battleState.results.victory,
-          casualtyCount: battleState.results.destroyedAllied,
-        },
-      });
+      setResultsDialogue(resultsText);
     };
 
     if (battleState && (battleState.status === 'victory' || battleState.status === 'defeat')) {
@@ -139,7 +128,7 @@ const CombatSimulator: React.FC<CombatSimulatorProps> = ({ onMissionComplete }) 
   }
 
   if (battleState.status === 'victory' || battleState.status === 'defeat') {
-    return <ResultsScreen results={battleState.results!} onReturn={handleReturnToBase} />;
+    return <ResultsScreen results={battleState.results!} onReturn={handleReturnToBase} dialogueText={resultsDialogue} />;
   }
 
   return (
@@ -149,7 +138,6 @@ const CombatSimulator: React.FC<CombatSimulatorProps> = ({ onMissionComplete }) 
         <ThreeJsScene
           alliedJets={battleState.alliedJets}
           enemyJets={battleState.enemyJets}
-          projectiles={battleState.projectiles}
           tracers={battleState.tracers}
           missiles={battleState.missiles}
           flares={battleState.flares}

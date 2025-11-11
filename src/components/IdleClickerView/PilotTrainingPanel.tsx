@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGameState } from '@/contexts/GameStateContext';
 import { Pilot } from '@/types/game.types';
 
@@ -7,6 +7,18 @@ const PilotTrainingPanel: React.FC = () => {
   const [selectedPilot, setSelectedPilot] = useState<Pilot | null>(
     gameState.pilots[0] || null
   );
+
+  // Update selectedPilot when pilots array changes
+  useEffect(() => {
+    if (selectedPilot) {
+      const updatedPilot = gameState.pilots.find(p => p.id === selectedPilot.id);
+      if (updatedPilot && updatedPilot !== selectedPilot) {
+        setSelectedPilot(updatedPilot);
+      }
+    } else if (gameState.pilots.length > 0) {
+      setSelectedPilot(gameState.pilots[0]);
+    }
+  }, [gameState.pilots, selectedPilot]);
 
   const TRAINING_COST = 50; // Credits per training session
   const TRAINING_AMOUNT = 10; // Progress gained per session

@@ -2,12 +2,11 @@ import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
-import { BattleEntity, Projectile, BattleEvent, TracerState, MissileState, FlareState } from '@/types/combat.types';
+import { BattleEntity, BattleEvent, TracerState, MissileState, FlareState } from '@/types/combat.types';
 
 interface ThreeJsSceneProps {
   alliedJets: BattleEntity[];
   enemyJets: BattleEntity[];
-  projectiles: Projectile[];
   tracers: TracerState[];
   missiles: MissileState[];
   flares: FlareState[];
@@ -17,13 +16,14 @@ interface ThreeJsSceneProps {
 const ThreeJsScene: React.FC<ThreeJsSceneProps> = ({
   alliedJets,
   enemyJets,
-  projectiles,
   tracers,
   missiles,
   flares,
   recentEvents = [],
 }) => {
   const [explosions, setExplosions] = useState<Array<{ id: string; position: [number, number, number]; timestamp: number }>>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const controlsRef = useRef<any>(null);
 
   // Create explosions from recent destruction events
   useEffect(() => {
@@ -52,6 +52,31 @@ const ThreeJsScene: React.FC<ThreeJsSceneProps> = ({
     return () => clearInterval(interval);
   }, []);
 
+// Camera Controller Component (must be inside Canvas)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const CameraController: React.FC<{ alliedJets: BattleEntity[], controlsRef: React.RefObject<any> }> = ({ alliedJets, controlsRef }) => {
+  useFrame(() => {
+    if (controlsRef.current) {
+      const activeAlliedJets = alliedJets.filter(jet => !jet.isDestroyed && !jet.isWrecked);
+      if (activeAlliedJets.length > 0) {
+        // Calculate allied barycenter (center of mass)
+        const alliedBarycenter = new THREE.Vector3();
+        activeAlliedJets.forEach(jet => {
+          alliedBarycenter.add(new THREE.Vector3(jet.position[0], jet.position[1], jet.position[2]));
+        });
+        alliedBarycenter.divideScalar(activeAlliedJets.length);
+
+        // Smooth camera following with lerp
+        const CAMERA_TARGET_LERP_SPEED = 1.0;
+        controlsRef.current.target.lerp(alliedBarycenter, CAMERA_TARGET_LERP_SPEED * 0.016); // delta time approximation
+        controlsRef.current.update();
+      }
+    }
+  });
+
+  return null; // This component doesn't render anything
+};
+
   return (
     <Canvas 
       camera={{ position: [0, 50, 100], fov: 60 }}
@@ -74,11 +99,6 @@ const ThreeJsScene: React.FC<ThreeJsSceneProps> = ({
         <FighterJet key={jet.id} entity={jet} color="red" />
       ))}
 
-      {/* Projectiles with Trails */}
-      {projectiles.map((proj) => (
-        <ProjectileMesh key={proj.id} projectile={proj} />
-      ))}
-
       {/* Tracers */}
       {tracers.map((tracer) => (
         <Tracer key={tracer.id} tracer={tracer} />
@@ -94,18 +114,17 @@ const ThreeJsScene: React.FC<ThreeJsSceneProps> = ({
         <Flare key={flare.id} flare={flare} />
       ))}
 
-      {/* Explosions */}
-      {explosions.map((exp) => (
-        <Explosion key={exp.id} position={exp.position} timestamp={exp.timestamp} />
-      ))}
-
       <OrbitControls
+        ref={controlsRef}
         enablePan={false}
         minDistance={50}
         maxDistance={200}
         enableDamping
         dampingFactor={0.05}
       />
+
+      {/* Camera Controller for dynamic following */}
+      <CameraController alliedJets={alliedJets} controlsRef={controlsRef} />
     </Canvas>
   );
 };
@@ -238,7 +257,7 @@ const FighterJet: React.FC<FighterJetProps> = ({ entity, color }) => {
             <meshStandardMaterial
               color="orange"
               emissive="orange"
-              emissiveIntensity={4}
+              emissiveIntensity={1}
               transparent
               opacity={0.6}
               toneMapped={false}
@@ -251,71 +270,8 @@ const FighterJet: React.FC<FighterJetProps> = ({ entity, color }) => {
   );
 };
 
-// Projectile Component with Smoke Trail
-interface ProjectileMeshProps {
-  projectile: Projectile;
-}
-
-const ProjectileMesh: React.FC<ProjectileMeshProps> = ({ projectile }) => {
-  const meshRef = useRef<THREE.Mesh>(null);
-  const [trailPositions, setTrailPositions] = useState<THREE.Vector3[]>([]);
-
-  useFrame(() => {
-    if (meshRef.current) {
-      const newPos = new THREE.Vector3(
-        projectile.position[0],
-        projectile.position[1],
-        projectile.position[2]
-      );
-      meshRef.current.position.copy(newPos);
-
-      // Update trail (keep last 8 positions for smoke effect)
-      setTrailPositions(prev => {
-        const updated = [...prev, newPos.clone()];
-        return updated.slice(-8);
-      });
-    }
-  });
-
-  return (
-    <group>
-      {/* Projectile */}
-      <mesh ref={meshRef}>
-        <sphereGeometry args={[0.5, 8, 8]} />
-        <meshStandardMaterial 
-          color="#00B4D8" 
-          emissive="#00B4D8"
-          emissiveIntensity={0.8}
-        />
-      </mesh>
-
-      {/* Smoke trail */}
-      {trailPositions.length > 1 && (
-        <primitive object={
-          (() => {
-            const geometry = new THREE.BufferGeometry().setFromPoints(trailPositions);
-            const material = new THREE.LineBasicMaterial({
-              color: '#FFFFFF',
-              transparent: true,
-              opacity: 0.3,
-            });
-            return new THREE.Line(geometry, material);
-          })()
-        } />
-      )}
-
-      {/* Glow effect */}
-      <mesh>
-        <sphereGeometry args={[1, 8, 8]} />
-        <meshBasicMaterial
-          color="#00B4D8"
-          transparent
-          opacity={0.3}
-        />
-      </mesh>
-    </group>
-  );
-};
+// Projectile Component with Smoke Trail - REMOVED for performance
+// The blue projectiles were causing FPS drops and are now replaced by the PoC firing system
 
 // Tracer Component (from PoC.tsx)
 interface TracerProps {
@@ -431,87 +387,6 @@ const Flare: React.FC<FlareProps> = ({ flare }) => {
         <meshStandardMaterial color="white" emissive="white" emissiveIntensity={4} toneMapped={false} />
       </mesh>
       <primitive object={trailLine} />
-    </group>
-  );
-};
-
-// Explosion Effect Component
-interface ExplosionProps {
-  position: [number, number, number];
-  timestamp: number;
-}
-
-const Explosion: React.FC<ExplosionProps> = ({ position, timestamp }) => {
-  const groupRef = useRef<THREE.Group>(null);
-  const [scale, setScale] = useState(0);
-  const age = (Date.now() - timestamp) / 1000; // seconds
-
-  useFrame(() => {
-    if (groupRef.current && age < 2) {
-      // Expand and fade
-      const progress = age / 2; // 0 to 1
-      setScale(1 + progress * 3);
-      groupRef.current.scale.set(scale, scale, scale);
-    }
-  });
-
-  if (age >= 2) return null;
-
-  const opacity = Math.max(0, 1 - age / 2);
-
-  return (
-    <group ref={groupRef} position={position}>
-      {/* Fireball */}
-      <mesh>
-        <sphereGeometry args={[3, 16, 16]} />
-        <meshBasicMaterial
-          color="#FF4500"
-          transparent
-          opacity={opacity * 0.8}
-        />
-      </mesh>
-
-      {/* Outer glow */}
-      <mesh>
-        <sphereGeometry args={[4, 16, 16]} />
-        <meshBasicMaterial
-          color="#FFA500"
-          transparent
-          opacity={opacity * 0.4}
-        />
-      </mesh>
-
-      {/* Flash */}
-      {age < 0.2 && (
-        <mesh>
-          <sphereGeometry args={[6, 16, 16]} />
-          <meshBasicMaterial
-            color="#FFFFFF"
-            transparent
-            opacity={0.8 * (1 - age / 0.2)}
-          />
-        </mesh>
-      )}
-
-      {/* Debris particles */}
-      {Array.from({ length: 8 }).map((_, i) => {
-        const angle = (i / 8) * Math.PI * 2;
-        const distance = age * 10;
-        const x = Math.cos(angle) * distance;
-        const y = Math.sin(angle) * distance;
-        const z = Math.sin(age * 5) * distance * 0.5;
-
-        return (
-          <mesh key={i} position={[x, y, z]}>
-            <boxGeometry args={[0.5, 0.5, 0.5]} />
-            <meshBasicMaterial
-              color="#2C2C2C"
-              transparent
-              opacity={opacity}
-            />
-          </mesh>
-        );
-      })}
     </group>
   );
 };
