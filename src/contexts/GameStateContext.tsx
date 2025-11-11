@@ -106,6 +106,7 @@ const createInitialState = (): GameState => ({
       assignedJetId: 'jet-1',
       missionsFlown: 0,
       kills: 0,
+      survivalStreak: 0,
     },
     {
       id: 'pilot-2',
@@ -121,6 +122,7 @@ const createInitialState = (): GameState => ({
       assignedJetId: 'jet-2',
       missionsFlown: 0,
       kills: 0,
+      survivalStreak: 0,
     },
   ],
 

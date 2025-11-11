@@ -19,7 +19,7 @@ interface CombatSimulatorProps {
 }
 
 const CombatSimulator: React.FC<CombatSimulatorProps> = ({ onMissionComplete }) => {
-  const { gameState, setCurrentView, updateResources, updateHighScore, addCompletedMission } =
+  const { gameState, setCurrentView, updateResources, updateHighScore, addCompletedMission, updatePilots } =
     useGameState();
   const { narrativeState } = useNarrative();
   const { sendChatCompletion } = useOpenRouter();
@@ -40,7 +40,7 @@ const CombatSimulator: React.FC<CombatSimulatorProps> = ({ onMissionComplete }) 
     initializeBattle();
   }, []);
 
-  // Apply rewards automatically when battle ends
+  // Apply rewards and update pilot stats when battle ends
   useEffect(() => {
     if (!battleState?.results || hasAppliedRewards) return;
     if (battleState.status !== 'victory' && battleState.status !== 'defeat') return;
@@ -61,6 +61,50 @@ const CombatSimulator: React.FC<CombatSimulatorProps> = ({ onMissionComplete }) 
       battleState.results.rewards.researchPoints
     );
     updateHighScore(missionScore);
+
+    // Update pilot stats based on battle results
+    const survivingPilots = battleState.results.pilotStats.filter(stat => stat.survival).map(stat =>
+      gameState.pilots.find(pilot => pilot.id === stat.pilotId)
+    ).filter(Boolean) as typeof gameState.pilots;
+
+    const killedPilots = battleState.results.pilotStats.filter(stat => !stat.survival).map(stat =>
+      gameState.pilots.find(pilot => pilot.id === stat.pilotId)
+    ).filter(Boolean) as typeof gameState.pilots;
+
+    // Distribute kills among surviving pilots
+    const totalKills = battleState.results.destroyedEnemy;
+    const killsPerSurvivingPilot = survivingPilots.length > 0 ? Math.floor(totalKills / survivingPilots.length) : 0;
+    const extraKills = survivingPilots.length > 0 ? totalKills % survivingPilots.length : 0;
+
+    const updatedPilots = gameState.pilots.map(pilot => {
+      const isSurviving = survivingPilots.some(p => p.id === pilot.id);
+      const isKilled = killedPilots.some(p => p.id === pilot.id);
+
+      if (isSurviving) {
+        // Calculate kills for this pilot (distribute evenly with some getting extra)
+        const pilotIndex = survivingPilots.findIndex(p => p.id === pilot.id);
+        const baseKills = killsPerSurvivingPilot;
+        const extraKill = pilotIndex < extraKills ? 1 : 0;
+        const pilotKills = baseKills + extraKill;
+
+        return {
+          ...pilot,
+          missionsFlown: pilot.missionsFlown + 1,
+          kills: pilot.kills + pilotKills,
+          survivalStreak: pilot.survivalStreak + 1, // Increment survival streak
+        };
+      } else if (isKilled) {
+        return {
+          ...pilot,
+          missionsFlown: pilot.missionsFlown + 1,
+          survivalStreak: 0, // Reset survival streak on death
+        };
+      }
+
+      return pilot;
+    });
+
+    updatePilots(updatedPilots);
 
     if (gameState.currentMission) {
       addCompletedMission(gameState.currentMission);
