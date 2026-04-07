@@ -269,3 +269,10 @@ If you enjoy this project, consider supporting its development:
 
 **Built with ❤️ using React, Three.js, and AI**
 
+---
+
+## Support This Project
+
+If you found this useful, please **star the repo** — it helps others discover it!
+
+[![Star on GitHub](https://img.shields.io/github/stars/MushroomFleet/DJZ-Idle-Ace?style=social)](https://github.com/MushroomFleet/DJZ-Idle-Ace)
